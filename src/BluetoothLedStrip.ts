@@ -14,6 +14,7 @@ export namespace BluetoothLedStrip
 		UNKNOWN,
 		MAGIC_STRIP,
 		LED_NET_WF,
+		KEEP_SMILE,
 	};
 
 	const guidServiceMagicStrip: string = '0000fff0-0000-1000-8000-00805f9b34fb';
@@ -21,6 +22,9 @@ export namespace BluetoothLedStrip
 
 	const guidServiceLedNetWf: string = '0000ffff-0000-1000-8000-00805f9b34fb';
 	const guidCharacteristicLedNetWf: string = '0000ff01-0000-1000-8000-00805f9b34fb';
+
+	const guidServiceKeepsmile: string = '0000afd0-0000-1000-8000-00805f9b34fb';
+	const guidCharacteristicKeepsmile: string = '0000afd1-0000-1000-8000-00805f9b34fb';
 
 	export class Device
 	{
@@ -44,7 +48,11 @@ export namespace BluetoothLedStrip
 			try
 			{
 				// select device which supports the service
-				const options = { filters: [ { services: [guidServiceMagicStrip] }, { namePrefix: 'LEDnetWF' } ], optionalServices: [guidServiceLedNetWf] };
+				const options = { filters: [ 	{ services: [guidServiceMagicStrip] },
+														{ namePrefix: 'LEDnetWF' },
+														{ namePrefix: 'KS03' }
+													],
+										optionalServices: [guidServiceLedNetWf, guidServiceKeepsmile] };
 				const device = await (window.navigator as any).bluetooth.requestDevice(options);
 
 				if (device != undefined)
@@ -73,14 +81,28 @@ export namespace BluetoothLedStrip
 				}
 				catch (exception)
 				{
-					//
-					// DeviceType.LED_NET_WF
-					//
-					service = await server?.getPrimaryService(guidServiceLedNetWf);
-					this.deviceType = DeviceType.LED_NET_WF
+					try
+					{
+						//
+						// DeviceType.LED_NET_WF
+						//
+						service = await server?.getPrimaryService(guidServiceLedNetWf);
+						this.deviceType = DeviceType.LED_NET_WF
 
-					// get characteristic
-					this.characteristic = await service?.getCharacteristic(guidCharacteristicLedNetWf);
+						// get characteristic
+						this.characteristic = await service?.getCharacteristic(guidCharacteristicLedNetWf);
+					}
+					catch (exception)
+					{
+						//
+						// DeviceType.KEEP_SMILE
+						//
+						service = await server?.getPrimaryService(guidServiceKeepsmile);
+						this.deviceType = DeviceType.KEEP_SMILE
+
+						// get characteristic
+						this.characteristic = await service?.getCharacteristic(guidCharacteristicKeepsmile);
+					}
 				}
 
 				// call connect callback
@@ -149,6 +171,25 @@ export namespace BluetoothLedStrip
 			}
 		}
 
+		// based on https://github.com/themooer1/cheshire/blob/master/cheshire/hal/compilers/ks03_new/platform_commands.py
+		sendKeepsmile(data: Uint8Array)
+		{
+			if (this.characteristic == undefined)
+				return;
+
+			try
+			{
+				// send byte stream to characteristic
+				this.characteristic.writeValueWithoutResponse(new Uint8Array([ ...data ])).then((_: any) =>
+				{
+				});
+			}
+			catch (exception)
+			{
+				console.log(exception);
+			}
+		}
+
 		// connvert rgb to hsv
 		// based on https://stackoverflow.com/a/54070620
 		// due to unknown reason, red and green must be swapped
@@ -177,6 +218,8 @@ export namespace BluetoothLedStrip
 				const hsv = this.rgb2hsv(red, green, blue);
 				this.sendLedNetWf([ 0x0B, 0x3B ], new Uint8Array([0xA1, ... Uint8Array.from(hsv), ... new Uint8Array(7)]));
 			}
+			else if (this.deviceType == DeviceType.KEEP_SMILE)
+				this.sendKeepsmile(new Uint8Array([0x5A, 0x00, 0x01, red, green, blue, 0x00, this.lastBrightness, 0x00, 0xA5]));
 		}
 
 		// set switch
@@ -186,42 +229,47 @@ export namespace BluetoothLedStrip
 				this.sendMagicStrip(Method.SWITCH, new Uint8Array([switchBoolean]));
 			else if (this.deviceType == DeviceType.LED_NET_WF)
 				this.sendLedNetWf([ 0x0B, 0x3B ], new Uint8Array([((switchBoolean > 0) ? 0x23 : 0x24), ... new Uint8Array(10)]));
+			else if (this.deviceType == DeviceType.KEEP_SMILE)
+				this.sendKeepsmile(new Uint8Array([0x5B, ((switchBoolean > 0) ? 0xF0 : 0x0F), 0x00, 0xB5]));
 		}
 
 		// set mode
 		setMode(mode: number)
 		{
+			this.lastMode = mode;
+
 			if (this.deviceType == DeviceType.MAGIC_STRIP)
 				this.sendMagicStrip(Method.MODE, new Uint8Array([mode]));
 			else if (this.deviceType == DeviceType.LED_NET_WF)
-			{
-				this.lastMode = mode;
 				this.sendLedNetWf([ 0x0B, 0x38 ], new Uint8Array([this.lastMode, this.lastSpeed, this.lastBrightness]));
-			}
+			else if (this.deviceType == DeviceType.KEEP_SMILE)
+				this.sendKeepsmile(new Uint8Array([0x5C, 0x00, (this.lastMode + 128), this.lastSpeed, this.lastBrightness, 0x00, 0xC5]));
 		}
 
 		// set brightness
 		setBrightness(brightness: number)
 		{
+			this.lastBrightness = brightness;
+
 			if (this.deviceType == DeviceType.MAGIC_STRIP)
 				this.sendMagicStrip(Method.BRIGHTNESS, new Uint8Array([brightness]));
 			else if (this.deviceType == DeviceType.LED_NET_WF)
-			{
-				this.lastBrightness = brightness;
 				this.sendLedNetWf([ 0x0B, 0x38 ], new Uint8Array([this.lastMode, this.lastSpeed, this.lastBrightness]));
-			}
+			else if (this.deviceType == DeviceType.KEEP_SMILE)
+				this.sendKeepsmile(new Uint8Array([0x5C, 0x00, (this.lastMode + 128), this.lastSpeed, this.lastBrightness, 0x00, 0xC5]));
 		}
 
 		// set speed
 		setSpeed(speed: number)
 		{
+			this.lastSpeed = speed;
+
 			if (this.deviceType == DeviceType.MAGIC_STRIP)
 				this.sendMagicStrip(Method.SPEED, new Uint8Array([speed]));
 			else if (this.deviceType == DeviceType.LED_NET_WF)
-			{
-				this.lastSpeed = speed;
 				this.sendLedNetWf([ 0x0B, 0x38 ], new Uint8Array([this.lastMode, this.lastSpeed, this.lastBrightness]));
-			}
+			else if (this.deviceType == DeviceType.KEEP_SMILE)
+				this.sendKeepsmile(new Uint8Array([0x5C, 0x00, (this.lastMode + 128), this.lastSpeed, this.lastBrightness, 0x00, 0xC5]));
 		}
 
 		// device disconnect event callback

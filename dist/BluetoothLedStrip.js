@@ -23,12 +23,15 @@ export var BluetoothLedStrip;
         DeviceType[DeviceType["UNKNOWN"] = 0] = "UNKNOWN";
         DeviceType[DeviceType["MAGIC_STRIP"] = 1] = "MAGIC_STRIP";
         DeviceType[DeviceType["LED_NET_WF"] = 2] = "LED_NET_WF";
+        DeviceType[DeviceType["KEEP_SMILE"] = 3] = "KEEP_SMILE";
     })(DeviceType = BluetoothLedStrip.DeviceType || (BluetoothLedStrip.DeviceType = {}));
     ;
     const guidServiceMagicStrip = '0000fff0-0000-1000-8000-00805f9b34fb';
     const guidCharacteristicMagicStrip = '0000fff1-0000-1000-8000-00805f9b34fb';
     const guidServiceLedNetWf = '0000ffff-0000-1000-8000-00805f9b34fb';
     const guidCharacteristicLedNetWf = '0000ff01-0000-1000-8000-00805f9b34fb';
+    const guidServiceKeepsmile = '0000afd0-0000-1000-8000-00805f9b34fb';
+    const guidCharacteristicKeepsmile = '0000afd1-0000-1000-8000-00805f9b34fb';
     class Device {
         constructor() {
             this.deviceType = DeviceType.UNKNOWN;
@@ -49,7 +52,11 @@ export var BluetoothLedStrip;
                 this.onError = onError;
                 try {
                     // select device which supports the service
-                    const options = { filters: [{ services: [guidServiceMagicStrip] }, { namePrefix: 'LEDnetWF' }], optionalServices: [guidServiceLedNetWf] };
+                    const options = { filters: [{ services: [guidServiceMagicStrip] },
+                            { namePrefix: 'LEDnetWF' },
+                            { namePrefix: 'KS03' }
+                        ],
+                        optionalServices: [guidServiceLedNetWf, guidServiceKeepsmile] };
                     const device = yield window.navigator.bluetooth.requestDevice(options);
                     if (device != undefined)
                         console.log('Selected device: ' + device.name + ', Connected: ' + device.gatt.connected);
@@ -71,13 +78,24 @@ export var BluetoothLedStrip;
                         this.characteristic = yield (service === null || service === void 0 ? void 0 : service.getCharacteristic(guidCharacteristicMagicStrip));
                     }
                     catch (exception) {
-                        //
-                        // DeviceType.LED_NET_WF
-                        //
-                        service = yield (server === null || server === void 0 ? void 0 : server.getPrimaryService(guidServiceLedNetWf));
-                        this.deviceType = DeviceType.LED_NET_WF;
-                        // get characteristic
-                        this.characteristic = yield (service === null || service === void 0 ? void 0 : service.getCharacteristic(guidCharacteristicLedNetWf));
+                        try {
+                            //
+                            // DeviceType.LED_NET_WF
+                            //
+                            service = yield (server === null || server === void 0 ? void 0 : server.getPrimaryService(guidServiceLedNetWf));
+                            this.deviceType = DeviceType.LED_NET_WF;
+                            // get characteristic
+                            this.characteristic = yield (service === null || service === void 0 ? void 0 : service.getCharacteristic(guidCharacteristicLedNetWf));
+                        }
+                        catch (exception) {
+                            //
+                            // DeviceType.KEEP_SMILE
+                            //
+                            service = yield (server === null || server === void 0 ? void 0 : server.getPrimaryService(guidServiceKeepsmile));
+                            this.deviceType = DeviceType.KEEP_SMILE;
+                            // get characteristic
+                            this.characteristic = yield (service === null || service === void 0 ? void 0 : service.getCharacteristic(guidCharacteristicKeepsmile));
+                        }
                     }
                     // call connect callback
                     if (device != undefined)
@@ -127,6 +145,19 @@ export var BluetoothLedStrip;
                 console.log(exception);
             }
         }
+        // based on https://github.com/themooer1/cheshire/blob/master/cheshire/hal/compilers/ks03_new/platform_commands.py
+        sendKeepsmile(data) {
+            if (this.characteristic == undefined)
+                return;
+            try {
+                // send byte stream to characteristic
+                this.characteristic.writeValueWithoutResponse(new Uint8Array([...data])).then((_) => {
+                });
+            }
+            catch (exception) {
+                console.log(exception);
+            }
+        }
         // connvert rgb to hsv
         // based on https://stackoverflow.com/a/54070620
         // due to unknown reason, red and green must be swapped
@@ -148,6 +179,8 @@ export var BluetoothLedStrip;
                 const hsv = this.rgb2hsv(red, green, blue);
                 this.sendLedNetWf([0x0B, 0x3B], new Uint8Array([0xA1, ...Uint8Array.from(hsv), ...new Uint8Array(7)]));
             }
+            else if (this.deviceType == DeviceType.KEEP_SMILE)
+                this.sendKeepsmile(new Uint8Array([0x5A, 0x00, 0x01, red, green, blue, 0x00, this.lastBrightness, 0x00, 0xA5]));
         }
         // set switch
         setSwitch(switchBoolean) {
@@ -155,33 +188,38 @@ export var BluetoothLedStrip;
                 this.sendMagicStrip(Method.SWITCH, new Uint8Array([switchBoolean]));
             else if (this.deviceType == DeviceType.LED_NET_WF)
                 this.sendLedNetWf([0x0B, 0x3B], new Uint8Array([((switchBoolean > 0) ? 0x23 : 0x24), ...new Uint8Array(10)]));
+            else if (this.deviceType == DeviceType.KEEP_SMILE)
+                this.sendKeepsmile(new Uint8Array([0x5B, ((switchBoolean > 0) ? 0xF0 : 0x0F), 0x00, 0xB5]));
         }
         // set mode
         setMode(mode) {
+            this.lastMode = mode;
             if (this.deviceType == DeviceType.MAGIC_STRIP)
                 this.sendMagicStrip(Method.MODE, new Uint8Array([mode]));
-            else if (this.deviceType == DeviceType.LED_NET_WF) {
-                this.lastMode = mode;
+            else if (this.deviceType == DeviceType.LED_NET_WF)
                 this.sendLedNetWf([0x0B, 0x38], new Uint8Array([this.lastMode, this.lastSpeed, this.lastBrightness]));
-            }
+            else if (this.deviceType == DeviceType.KEEP_SMILE)
+                this.sendKeepsmile(new Uint8Array([0x5C, 0x00, (this.lastMode + 128), this.lastSpeed, this.lastBrightness, 0x00, 0xC5]));
         }
         // set brightness
         setBrightness(brightness) {
+            this.lastBrightness = brightness;
             if (this.deviceType == DeviceType.MAGIC_STRIP)
                 this.sendMagicStrip(Method.BRIGHTNESS, new Uint8Array([brightness]));
-            else if (this.deviceType == DeviceType.LED_NET_WF) {
-                this.lastBrightness = brightness;
+            else if (this.deviceType == DeviceType.LED_NET_WF)
                 this.sendLedNetWf([0x0B, 0x38], new Uint8Array([this.lastMode, this.lastSpeed, this.lastBrightness]));
-            }
+            else if (this.deviceType == DeviceType.KEEP_SMILE)
+                this.sendKeepsmile(new Uint8Array([0x5C, 0x00, (this.lastMode + 128), this.lastSpeed, this.lastBrightness, 0x00, 0xC5]));
         }
         // set speed
         setSpeed(speed) {
+            this.lastSpeed = speed;
             if (this.deviceType == DeviceType.MAGIC_STRIP)
                 this.sendMagicStrip(Method.SPEED, new Uint8Array([speed]));
-            else if (this.deviceType == DeviceType.LED_NET_WF) {
-                this.lastSpeed = speed;
+            else if (this.deviceType == DeviceType.LED_NET_WF)
                 this.sendLedNetWf([0x0B, 0x38], new Uint8Array([this.lastMode, this.lastSpeed, this.lastBrightness]));
-            }
+            else if (this.deviceType == DeviceType.KEEP_SMILE)
+                this.sendKeepsmile(new Uint8Array([0x5C, 0x00, (this.lastMode + 128), this.lastSpeed, this.lastBrightness, 0x00, 0xC5]));
         }
         // device disconnect event callback
         onDisconnected(event) {

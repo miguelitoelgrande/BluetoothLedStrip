@@ -1,12 +1,13 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](http://www.gnu.org/licenses/gpl-3.0)
 
 # BluetoothLedStrip
-Control LED Strips that use the 'MagicStrip' [iOS](https://apps.apple.com/us/app/magicstrip-rgb/id1190522748)/[Android](https://play.google.com/store/apps/details?id=com.jtkj.magicstrip) and 'Zengge' [Android](https://play.google.com/store/apps/details?id=com.zengge.blev2) app.
+Control LED Strips that use the 'MagicStrip' [iOS](https://apps.apple.com/us/app/magicstrip-rgb/id1190522748)/[Android](https://play.google.com/store/apps/details?id=com.jtkj.magicstrip), 'Zengge' [Android](https://play.google.com/store/apps/details?id=com.zengge.blev2) and 'Keepsmile' [Android](https://play.google.com/store/apps/details?id=com.zjf.kslight) app.
 
 ## Supported Devices
-Two different protocols/devices are supported:
+Three different protocols/devices are supported:
 - Tested with a Bluetooth device named 'HTZM', but should work also with 'JMC-A', 'JMC-B', 'MAGIC_SHOE', 'MAGIC_LAMP', 'LCF', 'CoolStripMic', 'CRGB', 'FS0001' and 'FS0002' devices.
 - Devices starting with the Bluetooth device name 'LEDnetWF'.
+- Devices starting with the Bluetooth device name 'KS03'.
 
 ## Demo
 See [example/example.html](example/example.html) for usage.
@@ -36,7 +37,7 @@ Set LEDs to the given value. Each parameter can be between 0 and 255.
 
 #### device.setBrightness()
 	device.setBrightness(brightness);
-Set the overall brightness between 0 and 255 for MagicStrip or 0 and 100 for LEDnetWF.
+Set the overall brightness between 0 and 255 for MagicStrip or 0 and 100 for LEDnetWF/Keepsmile.
 
 #### device.setSwitch()
 	device.setSwitch(value);
@@ -48,10 +49,12 @@ Show a specifc animation. `mode` can be between 0 and 40 (MagicStrip) or 1 and 1
 
 #### device.setSpeed()
 	device.setSpeed(speed);
-Set the animation speed between 0 (fastest) and 255 (slowest) for MagicStrip or 0 (slowest) and 100 (fastest) for LEDnetWF.
+Set the animation speed between 0 (fastest) and 255 (slowest) for MagicStrip or 0 (slowest) and 100 (fastest) for LEDnetWF/Keepsmile.
 
 ## License
 [GNU General Public License v3.0](LICENSE.md)
 
 ## Acknowledgement
 https://github.com/8none1/zengge_lednetwf did the protocol reverse engineering on the LEDnetWF protocol.
+
+https://github.com/themooer1/cheshire did the protocol reverse engineering on the Keepsmile protocol.
