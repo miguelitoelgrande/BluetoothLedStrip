@@ -98,7 +98,7 @@
             <div class="command-log" id="commandLog">Waiting for connection...</div>
         </div>
 
-        <button class="connect-btn" onclick="connect()">Connect to LED Strip</button>
+        <button class="connect-btn" id="connectBtn" onclick="connect()">Connect to LED Strip</button>
 
         <div class="control-section">
             <div class="control-title">Power</div>
@@ -169,72 +169,201 @@
         </div>
     </div>
 
-    <!-- Use YOUR ORIGINAL working library -->
-    <script type="module" src="./BluetoothLedStrip.js"></script>
+    <script>
+        // ============================================
+        // LEDnetWF Bluetooth Controller
+        // Self-contained - No external dependencies
+        // ============================================
 
-    <script type="module">
-        import { BluetoothLedStrip } from './BluetoothLedStrip.js';
+        // const LEDNETWF_SERVICE = '0000fff0-0000-1000-8000-00805f9b34fb';	
+        const LEDNETWF_SERVICE = '0000ffff-0000-1000-8000-00805f9b34fb';
+        // const LEDNETWF_CHAR = '0000fff1-0000-1000-8000-00805f9b34fb';
+		const LEDNETWF_CHAR = '0000ff01-0000-1000-8000-00805f9b34fb';
 
-        var device;
 
+        let bluetoothDevice = null;
+        let gattServer = null;
+        let characteristic = null;
+
+        // ============================================
+        // Logging
+        // ============================================
+        
         function logCommand(msg) {
             const log = document.getElementById('commandLog');
             const time = new Date().toLocaleTimeString();
             log.innerHTML = `[${time}] ${msg}<br>` + log.innerHTML;
         }
 
-        // Original callbacks - UNCHANGED
-        function onConnect(dev) {
-            document.getElementById('status').innerHTML = 'Device ' + dev.name + ' connected';
-            logCommand('Connected to ' + dev.name);
+        function updateStatus(msg) {
+            document.getElementById('status').innerHTML = msg;
         }
 
-        function onDisconnect(dev) {
-            document.getElementById('status').innerHTML = 'Device ' + dev.name + ' disconnected';
-            logCommand('Disconnected');
-        }
+        // ============================================
+        // Connection Management
+        // ============================================
 
-        function onError(exception) {
-            document.getElementById('status').innerHTML = 'Error ' + exception + ' occured';
-            logCommand('ERROR: ' + exception);
-        }
-
-        // Original connect - UNCHANGED
-        window.connect = function() {
-            device = new BluetoothLedStrip.Device();
-            device.connect(onConnect, onDisconnect, onError);
-        }
-
-        // Helper: Send white temperature packet
-        async function sendWhitePacket(temperature, brightness) {
-            if (!device || !device.characteristic) {
-                logCommand('ERROR: Device not connected');
-                return;
-            }
-
+        async function connect() {
             try {
-                const packet = new Uint8Array([
-                    0x00, 0x10, 0x80, 0x00, 0x00, 0x0d, 0x0e, 0x0b,
-                    0x3b, 0xb1, 0x00, 0x00, 0x00,
-                    Math.round(temperature),
-                    Math.round(brightness),
-                    0x00, 0x00, 0x00, 0x00, 0x00,
-                    0x00
-                ]);
+                logCommand('Requesting device...');
                 
-                // Calculate checksum
-                let sum = 0;
-                for (let i = 9; i < packet.length - 1; i++) {
-                    sum += packet[i];
+                // Use acceptAllDevices to show all Bluetooth devices
+                // Some LEDnetWF devices don't advertise their service UUID properly
+                bluetoothDevice = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: [LEDNETWF_SERVICE]
+                });
+
+                bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+                logCommand('Connecting to GATT...');
+                gattServer = await bluetoothDevice.gatt.connect();
+                
+                // DIAGNOSTIC: Discover what services are actually available
+                try {
+                    logCommand('Discovering services...');
+                    const services = await gattServer.getPrimaryServices();
+                    logCommand(`Found ${services.length} services:`);
+                    for (const service of services) {
+                        logCommand(`  - Service UUID: ${service.uuid}`);
+                    }
+                } catch (e) {
+                    logCommand('Service discovery error: ' + e);
                 }
-                packet[20] = sum & 0xFF;
                 
-                await device.characteristic.writeValue(packet);
-                logCommand(`White: temp=${temperature}, bright=${brightness}`);
+                logCommand('Getting service...');
+                const service = await gattServer.getPrimaryService(LEDNETWF_SERVICE);
+                
+                logCommand('Getting characteristic...');
+                characteristic = await service.getCharacteristic(LEDNETWF_CHAR);
+
+                updateStatus('Device ' + bluetoothDevice.name + ' connected');
+                logCommand('✓ Connected to ' + bluetoothDevice.name);
+                
+                document.getElementById('connectBtn').textContent = 'Disconnect';
+                document.getElementById('connectBtn').onclick = disconnect;
+
             } catch (error) {
-                logCommand(`White error: ${error}`);
+                updateStatus('Error: ' + error);
+                logCommand('Connection ERROR: ' + error);
+                console.error('Connection error:', error);
             }
         }
+
+        function disconnect() {
+            if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+                bluetoothDevice.gatt.disconnect();
+            }
+        }
+
+        function onDisconnected() {
+            updateStatus('Disconnected');
+            logCommand('Device disconnected');
+            characteristic = null;
+            gattServer = null;
+            
+            document.getElementById('connectBtn').textContent = 'Connect to LED Strip';
+            document.getElementById('connectBtn').onclick = connect;
+        }
+
+        // ============================================
+        // Protocol Helper Functions
+        // ============================================
+
+        function calculateChecksum(packet) {
+            let sum = 0;
+            for (let i = 9; i < packet.length - 1; i++) {
+                sum += packet[i];
+            }
+            return sum & 0xFF;
+        }
+
+        async function sendPacket(packet, description) {
+            if (!characteristic) {
+                logCommand('ERROR: Not connected');
+                return false;
+            }
+            try {
+                await characteristic.writeValue(packet);
+                if (description) logCommand(description);
+                return true;
+            } catch (error) {
+                logCommand('Send ERROR: ' + error);
+                return false;
+            }
+        }
+
+        // ============================================
+        // LEDnetWF Protocol Commands
+        // ============================================
+
+        async function sendWhiteTemperature(temperature, brightness) {
+            const packet = new Uint8Array([
+                0x00, 0x10, 0x80, 0x00, 0x00, 0x0d, 0x0e, 0x0b,
+                0x3b, 0xb1, 0x00, 0x00, 0x00,
+                Math.round(temperature),
+                Math.round(brightness),
+                0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00
+            ]);
+            packet[20] = calculateChecksum(packet);
+            return await sendPacket(packet, `White: temp=${temperature}, bright=${brightness}`);
+        }
+
+        async function sendRGB(r, g, b) {
+            const packet = new Uint8Array([
+                0x00, 0x05, 0x80, 0x00, 0x00, 0x0d, 0x0e, 0x0b,
+                0x3b, 0xa1, r, g, b, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00
+            ]);
+            packet[20] = calculateChecksum(packet);
+            return await sendPacket(packet, `RGB(${r},${g},${b})`);
+        }
+
+        async function sendBrightness(value) {
+            const packet = new Uint8Array([
+                0x00, 0x06, 0x80, 0x00, 0x00, 0x0d, 0x0e, 0x0b,
+                0x3b, 0x34, value, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00
+            ]);
+            packet[20] = calculateChecksum(packet);
+            return await sendPacket(packet, `Brightness=${value}`);
+        }
+
+        async function sendSwitch(state) {
+            const isOn = state ? 0x23 : 0x24;
+            const packet = new Uint8Array([
+                0x00, state ? 0x04 : 0x5b, 0x80, 0x00, 0x00, 0x0d, 0x0e, 0x0b,
+                0x3b, isOn, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x32, 0x00, 0x00, 0x00
+            ]);
+            packet[20] = calculateChecksum(packet);
+            return await sendPacket(packet, `Power ${state ? 'ON' : 'OFF'}`);
+        }
+
+        async function sendMode(mode) {
+            const packet = new Uint8Array([
+                0x00, 0x07, 0x80, 0x00, 0x00, 0x0d, 0x0e, 0x0b,
+                0x3b, 0x2c, mode, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00
+            ]);
+            packet[20] = calculateChecksum(packet);
+            return await sendPacket(packet, `Mode=${mode}`);
+        }
+
+        async function sendSpeed(speed) {
+            const packet = new Uint8Array([
+                0x00, 0x08, 0x80, 0x00, 0x00, 0x0d, 0x0e, 0x0b,
+                0x3b, 0x2b, speed, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00
+            ]);
+            packet[20] = calculateChecksum(packet);
+            return await sendPacket(packet, `Speed=${speed}`);
+        }
+
+        // ============================================
+        // Color Temperature Helper Functions
+        // ============================================
 
         function percentToKelvin(percent) {
             return Math.round(2700 + (percent / 100) * (6500 - 2700));
@@ -243,6 +372,7 @@
         function kelvinToRgb(kelvin) {
             const temp = kelvin / 100;
             let r, g, b;
+
             if (temp <= 66) {
                 r = 255;
                 g = 99.4708025861 * Math.log(temp - 2) - 161.1195681661;
@@ -252,6 +382,7 @@
                 g = 288.1221695283 * Math.pow(temp - 60, -0.0755148492);
                 b = 255;
             }
+
             return {
                 r: Math.max(0, Math.min(255, Math.round(r))),
                 g: Math.max(0, Math.min(255, Math.round(g))),
@@ -267,34 +398,30 @@
                 `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`;
         }
 
-        // New functions
+        // ============================================
+        // UI Event Handlers
+        // ============================================
+
         window.updateTemperature = async function(value) {
             updateTemperaturePreview(value);
-            if (device) {
-                const brightness = parseInt(document.getElementById('brightnessSlider').value);
-                await sendWhitePacket(parseInt(value), brightness);
-            }
+            const brightness = parseInt(document.getElementById('brightnessSlider').value);
+            await sendWhiteTemperature(parseInt(value), brightness);
         }
 
         window.updateBrightness = function(value) {
             document.getElementById('brightnessValue').textContent = value;
-            if (device) {
-                device.setBrightness(value);
-                logCommand(`Brightness=${value}`);
-            }
+            sendBrightness(parseInt(value));
         }
 
         window.updateSpeed = function(value) {
             document.getElementById('speedValue').textContent = value;
-            if (device) {
-                device.setSpeed(value);
-                logCommand(`Speed=${value}`);
-            }
+            sendSpeed(parseInt(value));
         }
 
         window.setSwitch = function(value) {
             const offBtn = document.getElementById('offBtn');
             const onBtn = document.getElementById('onBtn');
+            
             if (value === 0) {
                 offBtn.classList.add('active');
                 onBtn.classList.remove('active');
@@ -302,10 +429,8 @@
                 onBtn.classList.add('active');
                 offBtn.classList.remove('active');
             }
-            if (device) {
-                device.setSwitch(value);
-                logCommand(`Power ${value ? 'ON' : 'OFF'}`);
-            }
+            
+            sendSwitch(value);
         }
 
         window.setModeBtn = function(mode) {
@@ -314,10 +439,7 @@
                 const btnMode = btn.getAttribute('onclick').match(/\d+/);
                 btn.classList.toggle('active', btnMode && parseInt(btnMode[0]) === mode);
             });
-            if (device) {
-                device.setMode(mode);
-                logCommand(`Mode=${mode}`);
-            }
+            sendMode(mode);
         }
 
         window.setCustomMode = function() {
@@ -330,17 +452,21 @@
         }
 
         window.testWhiteWarm = async function() {
-            logCommand('=== TEST: Warm White ===');
-            await sendWhitePacket(0, 100);
+            logCommand('=== TEST: Warm White (2700K) ===');
+            await sendWhiteTemperature(0, 100);
         }
 
         window.testWhiteCool = async function() {
-            logCommand('=== TEST: Cool White ===');
-            await sendWhitePacket(100, 100);
+            logCommand('=== TEST: Cool White (6500K) ===');
+            await sendWhiteTemperature(100, 100);
         }
 
+        // ============================================
         // Initialize
+        // ============================================
+
         updateTemperaturePreview(50);
+        logCommand('Ready. Click "Connect" to start.');
     </script>
 </body>
 </html>
