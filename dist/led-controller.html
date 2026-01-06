@@ -33,7 +33,7 @@
             transition: all 0.3s; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
         }
         .connect-btn:hover { background: #5568d3; transform: translateY(-2px); }
-        .control-section { margin-bottom: 25px; padding: 20px; background: #f8f9fa; border-radius: 12px; }
+        .control-section { margin-bottom: 15px; padding: 15px; background: #f8f9fa; border-radius: 12px; }
         .control-title {
             font-size: 16px; font-weight: 600; color: #667eea; margin-bottom: 15px;
             display: flex; align-items: center;
@@ -65,8 +65,8 @@
             margin-bottom: 10px;
         }
         .temperature-preview {
-            width: 100%; height: 80px; border-radius: 12px; margin-top: 15px;
-            border: 3px solid #fff; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            width: 100%; height: 20px; border-radius: 8px; margin-top: 10px;
+            border: 2px solid #fff; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
             transition: background-color 0.3s;
         }
         .switch-container { display: flex; gap: 10px; }
@@ -90,7 +90,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>💡 White LED Strip Controller</h1>
+        <h1>LED Strip Controller (LEDnetWF)</h1>
 
         <div class="status-section">
             <div class="status-label">Status:</div>
@@ -130,9 +130,9 @@
             <div class="info-note">
                 For white temperature control: Set mode to 97 (Manual), then use slider above.
             </div>
-            <div style="margin-top: 10px;">
-                <button class="test-btn" style="background: #28a745;" onclick="testWhiteWarm()">Test Warm</button>
-                <button class="test-btn" style="background: #17a2b8;" onclick="testWhiteCool()">Test Cool</button>
+            <div style="margin-top: 5px;">
+                <button class="test-btn" style="background: #ffd1a8;" onclick="testWhiteWarm()">Set Warm</button>
+                <button class="test-btn" style="background: #a8d8ff;" onclick="testWhiteCool()">Set Cool</button>
             </div>
         </div>
 

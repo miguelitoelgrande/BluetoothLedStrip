@@ -1,5 +1,13 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](http://www.gnu.org/licenses/gpl-3.0)
 
+
+# This fork:
+dist/led-controller.html as a quick and dirty replacement of the Zengge apk to control my (white-only, not RGB) LED Strip (my device starts with "LEDnetWF"). Minimal web hosting required for (static) html pages and javascript. 
+
+The original Zengge apk consumes > 200MB on phone, so it is at least bloatware. While this minimalistic page is about 20kb and runs on modern browsers and machines with Bluetooth enabled. A better approach.
+URL could be printed as QR Tag for visitors ;-)
+
+
 # BluetoothLedStrip
 Control LED Strips that use the 'MagicStrip' [iOS](https://apps.apple.com/us/app/magicstrip-rgb/id1190522748)/[Android](https://play.google.com/store/apps/details?id=com.jtkj.magicstrip), 'Zengge' [Android](https://play.google.com/store/apps/details?id=com.zengge.blev2) and 'Keepsmile' [Android](https://play.google.com/store/apps/details?id=com.zjf.kslight) app.
 
